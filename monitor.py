@@ -22,44 +22,41 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def check_tiktok_live(session, username):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     url = f"https://www.tiktok.com/@{username}/live"
     try:
         r = session.get(url, headers=headers, timeout=10)
-        if r.status_code != 200 or "login" in r.url:
-            return username, False
-        html = r.text
-        is_live = '"isPlayerLive":true' in html and 'watch live video' in html.lower()
+        if r.status_code != 200 or "login" in r.url: return username, False
+        is_live = '"isPlayerLive":true' in r.text and 'watch live video' in r.text.lower()
         return username, is_live
-    except:
-        return username, False
+    except: return username, False
 
 def send_telegram(message):
-    token = os.getenv("TELEGRAM_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    try:
-        requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
-    except:
-        pass
+    token, chat_id = os.getenv("TELEGRAM_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
+    try: requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
+    except: pass
 
 def write_github_log(sh, status, remark=""):
     try:
-        log_ws = sh.worksheet("GITHUB_LOGS")
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # Append log baru
-        log_ws.append_row([now, status, remark])
+        # DEBUG: Print semua worksheet yang wujud
+        ws_list = [w.title for w in sh.worksheets()]
+        print(f"Worksheets dijumpai: {ws_list}")
         
-        # --- AUTO DELETE (Limit 500 Rows) ---
-        # Kita simpan header (1) + 499 data
-        all_rows = log_ws.get_all_values()
-        if len(all_rows) > 500:
-            # Padam baris ke-2 (data paling lama)
-            log_ws.delete_rows(2)
+        if "GITHUB_LOGS" in ws_list:
+            log_ws = sh.worksheet("GITHUB_LOGS")
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_ws.append_row([now, status, remark])
+            
+            # Auto cleanup > 500 rows
+            if log_ws.row_count > 500:
+                all_values = log_ws.get_all_values()
+                if len(all_values) > 500:
+                    log_ws.delete_rows(2)
+            print("Log berjaya ditulis ke GITHUB_LOGS")
+        else:
+            print("RALAT: Tab GITHUB_LOGS tidak dijumpai dalam senarai!")
     except Exception as e:
-        print(f"Gagal tulis log: {e}")
+        print(f"Gagal tulis log: {str(e)}")
 
 # --- MAIN RUN ---
 print(f"Menyambung ke Google Sheet...")
@@ -70,55 +67,37 @@ try:
     ws = sh.worksheet("LIVE_TRACKER")
     
     random.shuffle(TARGET_USERS)
+    status_tracker = json.load(open("status.json", "r")) if os.path.exists("status.json") else {}
 
-    if os.path.exists("status.json"):
-        with open("status.json", "r") as f:
-            status_tracker = json.load(f)
-    else:
-        status_tracker = {}
-
-    print(f"Memulakan semakan pantas untuk {len(TARGET_USERS)} akaun...")
-    
-    results = []
+    print(f"Checking {len(TARGET_USERS)} users...")
     with requests.Session() as session:
         with ThreadPoolExecutor(max_workers=5) as executor:
             results = list(executor.map(lambda u: check_tiktok_live(session, u), TARGET_USERS))
 
-    updates_count = 0
+    updates = 0
     for user, is_live in results:
         was_live = status_tracker.get(user, False)
+        now_t, today = datetime.now().strftime("%H:%M:%S"), datetime.now().strftime("%d/%m/%Y")
+        
         if is_live and not was_live:
-            now_time = datetime.now().strftime("%H:%M:%S")
-            today = datetime.now().strftime("%d/%m/%Y")
-            ws.append_row([user, "LIVE", now_time, "", "", today])
-            send_telegram(f"🔴 <b>LIVE SEKARANG!</b>\n👤 @{user}")
-            status_tracker[user] = True
-            updates_count += 1
+            ws.append_row([user, "LIVE", now_t, "", "", today])
+            send_telegram(f"🔴 <b>LIVE:</b> @{user}")
+            status_tracker[user], updates = True, updates + 1
         elif not is_live and was_live:
-            now_time = datetime.now().strftime("%H:%M:%S")
-            try:
-                cells = ws.findall(user)
-                if cells:
-                    last_row = cells[-1].row
-                    ws.update_cell(last_row, 2, "OFFLINE")
-                    ws.update_cell(last_row, 4, now_time)
-                send_telegram(f"⚪ <b>OFFLINE:</b> @{user}")
-            except: pass
-            status_tracker[user] = False
-            updates_count += 1
+            cells = ws.findall(user)
+            if cells:
+                r = cells[-1].row
+                ws.update_cell(r, 2, "OFFLINE")
+                ws.update_cell(r, 4, now_t)
+            send_telegram(f"⚪ <b>OFFLINE:</b> @{user}")
+            status_tracker[user], updates = False, updates + 1
 
-    with open("status.json", "w") as f:
-        json.dump(status_tracker, f)
-    
+    json.dump(status_tracker, open("status.json", "w"))
     duration = round(time.time() - start_time, 2)
-    write_github_log(sh, "SUCCESS", f"Check {len(TARGET_USERS)} users in {duration}s. Updates: {updates_count}")
+    write_github_log(sh, "SUCCESS", f"Duration: {duration}s | Updates: {updates}")
     print("Selesai.")
 
 except Exception as e:
-    # Log error kalau skrip crash
-    try:
-        gc = get_gspread_client()
-        sh = gc.open(SHEET_NAME)
-        write_github_log(sh, "ERROR", str(e))
-    except: pass
     print(f"Error: {str(e)}")
+    try: write_github_log(gc.open(SHEET_NAME), "ERROR", str(e))
+    except: pass
