@@ -31,7 +31,17 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          
+          # Tambah ni: Ambil perubahan terbaru dan paksa overwrite kalau perlu
+          git fetch origin main
+          git checkout main
+          
+          # Simpan perubahan status.json
           git add status.json
-          git commit -m "Update live status" || exit 0
-          git pull origin main --rebase --autostash  # Tambah --autostash ni untuk settlekan isu tadi
+          git commit -m "Update live status [skip ci]" || exit 0
+          
+          # Pull dengan strategi 'ours' supaya tak gaduh pasal conflict
+          git pull origin main --rebase --autostash
+          
+          # Push balik
           git push origin main
