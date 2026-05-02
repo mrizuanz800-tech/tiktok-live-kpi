@@ -1,3 +1,4 @@
+# Version: 2.0 - Debug Logs
 import os
 import json
 import gspread
