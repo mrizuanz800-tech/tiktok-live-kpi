@@ -3,14 +3,14 @@ import json
 import gspread
 import requests
 import time
+import random
 from datetime import datetime
 from google.oauth2.service_account import Credentials
 
 # --- CONFIG ---
 TARGET_USERS = ["kekanda__", "c.hzrina", "ct.aisyahh", "asslahierah", "keanu.riev", "capikjohari", "nurulaiinaa.a", "urpiqachu", "bukanmiraaaaaa", "memangmiraaa", "s5yer_", "harszanlagi", "najlazulaikha_", "nuarjelaaa", "ehin__", "mdsyhmie", "amriezaidi", "malkodok97", "sofiyahhhs", "azrulharry", "irfndanialb", "lokman6005", "mad_khann", "dausbatjo", "aimnjunaid._", "faeqahkahar", "unalou._"]
 
-# Pastikan tiada ruang kosong pelik di hujung nama
-SHEET_NAME = "YouTube Live Monitoring: Malaysian Creators 2026" 
+SHEET_NAME = "YouTube Live Monitoring: Malaysian Creators 2026"
 
 def get_gspread_client():
     info = json.loads(os.getenv("GCP_SERVICE_ACCOUNT"))
@@ -27,6 +27,8 @@ def check_tiktok_live(username):
     }
     url = f"https://www.tiktok.com/@{username}/live"
     try:
+        # Tambah random delay kecil sebelum request
+        time.sleep(random.randint(2, 5))
         r = requests.get(url, headers=headers, timeout=15)
         return '"status":2' in r.text and '"room_id":' in r.text
     except:
@@ -38,7 +40,7 @@ def send_telegram(message):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
         requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
-        print("Mesej Telegram dihantar.") # Baris ini kena masuk ke dalam 'try'
+        print("Mesej Telegram dihantar.")
     except Exception as e:
         print(f"Gagal hantar Telegram: {e}")
 
@@ -54,6 +56,10 @@ try:
             status_tracker = json.load(f)
     else:
         status_tracker = {}
+
+    # --- SHUFFLE DI SINI (SEKALI SAHAJA) ---
+    random.shuffle(TARGET_USERS)
+    print(f"Urutan check kali ini telah dirawakkan.")
 
     for user in TARGET_USERS:
         print(f"Checking @{user}...")
@@ -77,13 +83,14 @@ try:
                     ws.update_cell(last_row, 2, "OFFLINE")
                     ws.update_cell(last_row, 4, end_time)
                     
+                    # Ambil start_time untuk kira durasi
                     start_str = ws.cell(last_row, 3).value
-                    t1 = datetime.strptime(start_str, "%H:%M:%S")
-                    t2 = datetime.strptime(end_time, "%H:%M:%S")
-                    duration = int((t2 - t1).total_seconds() / 60)
-                    ws.update_cell(last_row, 5, duration)
-                    
-                    send_telegram(f"⚪ <b>OFFLINE:</b> @{user} dah tamat Live ({duration} min).")
+                    if start_str:
+                        t1 = datetime.strptime(start_str, "%H:%M:%S")
+                        t2 = datetime.strptime(end_time, "%H:%M:%S")
+                        duration = int((t2 - t1).total_seconds() / 60)
+                        ws.update_cell(last_row, 5, duration)
+                        send_telegram(f"⚪ <b>OFFLINE:</b> @{user} dah tamat Live ({duration} min).")
             except Exception as e:
                 print(f"Gagal kemaskini waktu tamat: {e}")
             
