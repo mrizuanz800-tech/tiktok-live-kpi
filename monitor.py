@@ -21,30 +21,51 @@ def get_gspread_client():
     )
     return gspread.authorize(creds)
 
-def check_tiktok_live(username):
+def check_tiktok_live(session, username):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Cookie": "tt_webid_v2=73" + str(random.randint(10**14, 10**15)) # Cookie lebih dinamik
     }
     url = f"https://www.tiktok.com/@{username}/live"
     try:
-        # Kurangkan sleep ke 2-5 saat (sebab kita run parallel, total masa tetap jimat)
-        time.sleep(random.randint(2, 5))
-        r = requests.get(url, headers=headers, timeout=20)
+        # Kita buang sleep. Threading akan handle kelajuan.
+        # Guna session supaya lebih ringan
+        r = session.get(url, headers=headers, timeout=10) # Timeout pendekkan ke 10s
         
-        if r.status_code != 200:
+        if r.status_code != 200 or "login" in r.url:
             return username, False
 
         html = r.text
         is_live = '"isPlayerLive":true' in html and 'watch live video' in html.lower()
-        
-        if "login" in r.url:
-            return username, False
-            
         return username, is_live
     except:
         return username, False
+
+# --- MAIN RUN ---
+try:
+    gc = get_gspread_client()
+    sh = gc.open(SHEET_NAME)
+    ws = sh.worksheet("LIVE_TRACKER")
+    
+    random.shuffle(TARGET_USERS)
+
+    if os.path.exists("status.json"):
+        with open("status.json", "r") as f:
+            status_tracker = json.load(f)
+    else:
+        status_tracker = {}
+
+    print(f"Memulakan Fast-Check untuk {len(TARGET_USERS)} akaun...")
+    
+    results = []
+    # Gunakan Session untuk speed up network requests
+    with requests.Session() as session:
+        # Kita naikkan worker ke 10 (biar dia buat 10 serentak)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # Kita hantar session sekali dalam fungsi
+            results = list(executor.map(lambda u: check_tiktok_live(session, u), TARGET_USERS))
+
+    # [Bahagian proses hasil (append_row dll) kekal sama macam asal]
 
 def send_telegram(message):
     token = os.getenv("TELEGRAM_TOKEN")
