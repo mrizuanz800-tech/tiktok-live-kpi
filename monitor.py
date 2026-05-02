@@ -6,6 +6,7 @@ import time
 import random
 from datetime import datetime
 from google.oauth2.service_account import Credentials
+from concurrent.futures import ThreadPoolExecutor  # Modul baru untuk kelajuan
 
 # --- CONFIG ---
 TARGET_USERS = ["kekanda__", "c.hzrina", "ct.aisyahh", "asslahierah", "keanu.riev", "capikjohari", "nurulaiinaa.a", "urpiqachu", "bukanmiraaaaaa", "memangmiraaa", "s5yer_", "harszanlagi", "najlazulaikha_", "nuarjelaaa", "ehin__", "mdsyhmie", "amriezaidi", "malkodok97", "sofiyahhhs", "azrulharry", "irfndanialb", "lokman6005", "mad_khann", "dausbatjo", "aimnjunaid._", "faeqahkahar", "unalou._"]
@@ -24,31 +25,26 @@ def check_tiktok_live(username):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Cookie": "tt_webid_v2=7300000000000000000" # Tambah cookie palsu sikit
+        "Cookie": "tt_webid_v2=73" + str(random.randint(10**14, 10**15)) # Cookie lebih dinamik
     }
     url = f"https://www.tiktok.com/@{username}/live"
     try:
-        # Delay lebih lama (rawak 10-20 saat) supaya TikTok tak perasan
-        time.sleep(random.randint(10, 20))
-        r = requests.get(url, headers=headers, timeout=30)
+        # Kurangkan sleep ke 2-5 saat (sebab kita run parallel, total masa tetap jimat)
+        time.sleep(random.randint(2, 5))
+        r = requests.get(url, headers=headers, timeout=20)
         
         if r.status_code != 200:
-            return False
+            return username, False
 
         html = r.text
-        
-        # LOGIK BARU: 
-        # Kalau LIVE, TikTok akan letak tajuk siaran dalam metadata.
-        # Kita cari "isPlayerLive":true DAN pastikan bukan "Page Not Found"
         is_live = '"isPlayerLive":true' in html and 'watch live video' in html.lower()
         
-        # Double check: Kalau kena redirect ke page login, itu bukan LIVE
         if "login" in r.url:
-            return False
+            return username, False
             
-        return is_live
+        return username, is_live
     except:
-        return False
+        return username, False
 
 def send_telegram(message):
     token = os.getenv("TELEGRAM_TOKEN")
@@ -66,6 +62,7 @@ try:
     sh = gc.open(SHEET_NAME)
     ws = sh.worksheet("LIVE_TRACKER")
     
+    # Shuffle untuk elak corak dikesan TikTok
     random.shuffle(TARGET_USERS)
 
     if os.path.exists("status.json"):
@@ -74,9 +71,14 @@ try:
     else:
         status_tracker = {}
 
-    for user in TARGET_USERS:
-        print(f"Checking @{user}...")
-        is_live = check_tiktok_live(user)
+    # --- OPTIMASI: SEMAK 5 AKAUN SERENTAK ---
+    print(f"Memulakan semakan pantas untuk {len(TARGET_USERS)} akaun...")
+    results = []
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        results = list(executor.map(check_tiktok_live, TARGET_USERS))
+
+    # Proses hasil semakan
+    for user, is_live in results:
         was_live = status_tracker.get(user, False)
 
         if is_live and not was_live:
@@ -99,6 +101,9 @@ try:
             except:
                 pass
             status_tracker[user] = False
+        else:
+            # Tidak LIVE dan memang sedia OFFLINE, abaikan
+            pass
 
     with open("status.json", "w") as f:
         json.dump(status_tracker, f)
