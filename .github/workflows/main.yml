@@ -32,16 +32,14 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
-          # Tambah ni: Ambil perubahan terbaru dan paksa overwrite kalau perlu
-          git fetch origin main
-          git checkout main
+          # Pastikan kita di branch main dan selari dengan origin
+          git pull origin main --rebase
           
-          # Simpan perubahan status.json
+          # Hanya commit kalau ada perubahan pada status.json
           git add status.json
-          git commit -m "Update live status [skip ci]" || exit 0
-          
-          # Pull dengan strategi 'ours' supaya tak gaduh pasal conflict
-          git pull origin main --rebase --autostash
-          
-          # Push balik
-          git push origin main
+          if git diff --staged --quiet; then
+            echo "Tiada perubahan pada status.json"
+          else
+            git commit -m "Update live status [skip ci]"
+            git push origin main
+          fi
