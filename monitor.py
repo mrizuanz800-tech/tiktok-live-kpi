@@ -6,7 +6,7 @@ import time
 import random
 from datetime import datetime
 from google.oauth2.service_account import Credentials
-from concurrent.futures import ThreadPoolExecutor  # Modul baru untuk kelajuan
+from concurrent.futures import ThreadPoolExecutor
 
 # --- CONFIG ---
 TARGET_USERS = ["kekanda__", "c.hzrina", "ct.aisyahh", "asslahierah", "keanu.riev", "capikjohari", "nurulaiinaa.a", "urpiqachu", "bukanmiraaaaaa", "memangmiraaa", "s5yer_", "harszanlagi", "najlazulaikha_", "nuarjelaaa", "ehin__", "mdsyhmie", "amriezaidi", "malkodok97", "sofiyahhhs", "azrulharry", "irfndanialb", "lokman6005", "mad_khann", "dausbatjo", "aimnjunaid._", "faeqahkahar", "unalou._"]
@@ -37,11 +37,8 @@ def check_tiktok_live(session, username):
         is_live = '"isPlayerLive":true' in html and 'watch live video' in html.lower()
         return username, is_live
     except:
-        # Bahagian ni yang hilang tadi!
         return username, False
 
-def send_telegram(message):
-    # Sambungan kod kau yang seterusnya...
 def send_telegram(message):
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
@@ -58,7 +55,6 @@ try:
     sh = gc.open(SHEET_NAME)
     ws = sh.worksheet("LIVE_TRACKER")
     
-    # Shuffle untuk elak corak dikesan TikTok
     random.shuffle(TARGET_USERS)
 
     if os.path.exists("status.json"):
@@ -67,13 +63,14 @@ try:
     else:
         status_tracker = {}
 
-    # --- OPTIMASI: SEMAK 5 AKAUN SERENTAK ---
     print(f"Memulakan semakan pantas untuk {len(TARGET_USERS)} akaun...")
+    
     results = []
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results = list(executor.map(check_tiktok_live, TARGET_USERS))
+    with requests.Session() as session:
+        # Gunakan lambda supaya kita boleh hantar 'session' ke dalam fungsi semakan
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            results = list(executor.map(lambda u: check_tiktok_live(session, u), TARGET_USERS))
 
-    # Proses hasil semakan
     for user, is_live in results:
         was_live = status_tracker.get(user, False)
 
@@ -97,9 +94,6 @@ try:
             except:
                 pass
             status_tracker[user] = False
-        else:
-            # Tidak LIVE dan memang sedia OFFLINE, abaikan
-            pass
 
     with open("status.json", "w") as f:
         json.dump(status_tracker, f)
