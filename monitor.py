@@ -24,19 +24,29 @@ def check_tiktok_live(username):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Cookie": "tt_webid_v2=7300000000000000000" # Tambah cookie palsu sikit
     }
     url = f"https://www.tiktok.com/@{username}/live"
     try:
-        time.sleep(random.randint(5, 10)) # Delay lebih lama sikit
-        r = requests.get(url, headers=headers, timeout=20)
+        # Delay lebih lama (rawak 10-20 saat) supaya TikTok tak perasan
+        time.sleep(random.randint(10, 20))
+        r = requests.get(url, headers=headers, timeout=30)
         
         if r.status_code != 200:
             return False
 
         html = r.text
-        # Check pelbagai keyword LIVE TikTok
-        return '"status":2' in html or 'live-status' in html.lower() or 'isPlayerLive":true' in html
+        
+        # LOGIK BARU: 
+        # Kalau LIVE, TikTok akan letak tajuk siaran dalam metadata.
+        # Kita cari "isPlayerLive":true DAN pastikan bukan "Page Not Found"
+        is_live = '"isPlayerLive":true' in html and 'watch live video' in html.lower()
+        
+        # Double check: Kalau kena redirect ke page login, itu bukan LIVE
+        if "login" in r.url:
+            return False
+            
+        return is_live
     except:
         return False
 
