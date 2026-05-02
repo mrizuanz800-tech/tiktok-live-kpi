@@ -8,7 +8,7 @@ from datetime import datetime
 from google.oauth2.service_account import Credentials
 
 # --- CONFIG ---
-TARGET_USERS = ["hanzonurrz", "kekanda__", "c.hzrina", "ct.aisyahh", "asslahierah", "keanu.riev", "capikjohari", "nurulaiinaa.a", "urpiqachu", "bukanmiraaaaaa", "memangmiraaa", "s5yer_", "harszanlagi", "najlazulaikha_", "nuarjelaaa", "ehin__", "mdsyhmie", "amriezaidi", "malkodok97", "sofiyahhhs", "azrulharry", "irfndanialb", "lokman6005", "mad_khann", "dausbatjo", "aimnjunaid._", "faeqahkahar", "unalou._"]
+TARGET_USERS = ["kekanda__", "c.hzrina", "ct.aisyahh", "asslahierah", "keanu.riev", "capikjohari", "nurulaiinaa.a", "urpiqachu", "bukanmiraaaaaa", "memangmiraaa", "s5yer_", "harszanlagi", "najlazulaikha_", "nuarjelaaa", "ehin__", "mdsyhmie", "amriezaidi", "malkodok97", "sofiyahhhs", "azrulharry", "irfndanialb", "lokman6005", "mad_khann", "dausbatjo", "aimnjunaid._", "faeqahkahar", "unalou._"]
 
 SHEET_NAME = "YouTube Live Monitoring: Malaysian Creators 2026"
 
@@ -28,47 +28,34 @@ def check_tiktok_live(username):
     }
     url = f"https://www.tiktok.com/@{username}/live"
     try:
-        # Rehat sekejap antara 4-8 saat (elak bot detection)
-        time.sleep(random.randint(4, 8))
+        time.sleep(random.randint(5, 10)) # Delay lebih lama sikit
         r = requests.get(url, headers=headers, timeout=20)
         
-        # Kalau TikTok sekat (403 atau 429), kita akan tahu
         if r.status_code != 200:
-            print(f"Akses dihalang untuk {username} (Status: {r.status_code})")
             return False
 
         html = r.text
-        # TikTok simpan status LIVE dalam beberapa jenis keyword
-        # Kita check semua sekali untuk lebih selamat
-        is_live = (
-            '"status":2' in html or 
-            'live-status' in html.lower() or 
-            '"liveRoom":' in html or 
-            'isPlayerLive":true' in html
-        )
-        return is_live
-    except Exception as e:
-        print(f"Error pada {username}: {e}")
+        # Check pelbagai keyword LIVE TikTok
+        return '"status":2' in html or 'live-status' in html.lower() or 'isPlayerLive":true' in html
+    except:
         return False
-    
+
 def send_telegram(message):
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
         requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
-        print("Mesej Telegram dihantar.")
-    except Exception as e:
-        print(f"Gagal hantar Telegram: {e}")
+    except:
+        pass
 
 # --- MAIN RUN ---
+print(f"Menyambung ke Google Sheet...")
 try:
-    print(f"Menyambung ke Sheet: {SHEET_NAME}...")
     gc = get_gspread_client()
     sh = gc.open(SHEET_NAME)
     ws = sh.worksheet("LIVE_TRACKER")
     
-    # Shuffle list supaya check urutan berbeza setiap kali
     random.shuffle(TARGET_USERS)
 
     if os.path.exists("status.json"):
@@ -78,41 +65,34 @@ try:
         status_tracker = {}
 
     for user in TARGET_USERS:
-        print(f"Semak @{user}...")
+        print(f"Checking @{user}...")
         is_live = check_tiktok_live(user)
         was_live = status_tracker.get(user, False)
 
         if is_live and not was_live:
-            # Rekod mula LIVE
-            start_time = datetime.now().strftime("%H:%M:%S")
-            date_today = datetime.now().strftime("%d/%m/%Y")
-            ws.append_row([user, "LIVE", start_time, "", "", date_today])
-            send_telegram(f"🔴 <b>LIVE SEKARANG!</b>\n👤 @{user} tengah rancak di TikTok!")
+            now = datetime.now().strftime("%H:%M:%S")
+            today = datetime.now().strftime("%d/%m/%Y")
+            ws.append_row([user, "LIVE", now, "", "", today])
+            send_telegram(f"🔴 <b>LIVE SEKARANG!</b>\n👤 @{user}")
             status_tracker[user] = True
-            print(f"Confirmed: @{user} tengah LIVE.")
+            print(f"Status: @{user} is LIVE!")
 
         elif not is_live and was_live:
-            # Rekod tamat LIVE
-            end_time = datetime.now().strftime("%H:%M:%S")
+            now = datetime.now().strftime("%H:%M:%S")
             try:
                 cells = ws.findall(user)
                 if cells:
                     last_row = cells[-1].row
                     ws.update_cell(last_row, 2, "OFFLINE")
-                    ws.update_cell(last_row, 4, end_time)
-                    # (Kiraan durasi boleh ditambah di sini nanti)
-                send_telegram(f"⚪ <b>OFFLINE:</b> @{user} dah tamat Live.")
+                    ws.update_cell(last_row, 4, now)
+                send_telegram(f"⚪ <b>OFFLINE:</b> @{user}")
             except:
                 pass
             status_tracker[user] = False
 
-    # Simpan status ke fail JSON
     with open("status.json", "w") as f:
         json.dump(status_tracker, f)
-    print("Semua akaun telah disemak.")
+    print("Selesai.")
 
 except Exception as e:
-    # Ini akan print ralat yang sebenar, bukan sekadar 'Response 200'
-    import traceback
-    print(f"Ralat Utama: {e}")
-    traceback.print_exc()
+    print(f"Error: {str(e)}")
