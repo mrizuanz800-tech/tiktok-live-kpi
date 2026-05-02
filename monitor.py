@@ -28,9 +28,7 @@ def check_tiktok_live(session, username):
     }
     url = f"https://www.tiktok.com/@{username}/live"
     try:
-        # Kita buang sleep. Threading akan handle kelajuan.
-        # Guna session supaya lebih ringan
-        r = session.get(url, headers=headers, timeout=10) # Timeout pendekkan ke 10s
+        r = session.get(url, headers=headers, timeout=10)
         
         if r.status_code != 200 or "login" in r.url:
             return username, False
@@ -39,34 +37,11 @@ def check_tiktok_live(session, username):
         is_live = '"isPlayerLive":true' in html and 'watch live video' in html.lower()
         return username, is_live
     except:
+        # Bahagian ni yang hilang tadi!
         return username, False
 
-# --- MAIN RUN ---
-try:
-    gc = get_gspread_client()
-    sh = gc.open(SHEET_NAME)
-    ws = sh.worksheet("LIVE_TRACKER")
-    
-    random.shuffle(TARGET_USERS)
-
-    if os.path.exists("status.json"):
-        with open("status.json", "r") as f:
-            status_tracker = json.load(f)
-    else:
-        status_tracker = {}
-
-    print(f"Memulakan Fast-Check untuk {len(TARGET_USERS)} akaun...")
-    
-    results = []
-    # Gunakan Session untuk speed up network requests
-    with requests.Session() as session:
-        # Kita naikkan worker ke 10 (biar dia buat 10 serentak)
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            # Kita hantar session sekali dalam fungsi
-            results = list(executor.map(lambda u: check_tiktok_live(session, u), TARGET_USERS))
-
-    # [Bahagian proses hasil (append_row dll) kekal sama macam asal]
-
+def send_telegram(message):
+    # Sambungan kod kau yang seterusnya...
 def send_telegram(message):
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
