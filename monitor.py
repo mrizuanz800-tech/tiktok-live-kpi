@@ -32,29 +32,25 @@ def check_tiktok_live(session, username):
     except: return username, False
 
 def send_telegram(message):
-    token, chat_id = os.getenv("TELEGRAM_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
-    try: requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
+    token = os.getenv("TELEGRAM_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    try:
+        requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
+                      json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
     except: pass
 
 def write_github_log(sh, status, remark=""):
     try:
-        # DEBUG: Print semua worksheet yang wujud
         ws_list = [w.title for w in sh.worksheets()]
-        print(f"Worksheets dijumpai: {ws_list}")
-        
         if "GITHUB_LOGS" in ws_list:
             log_ws = sh.worksheet("GITHUB_LOGS")
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             log_ws.append_row([now, status, remark])
             
             # Auto cleanup > 500 rows
-            if log_ws.row_count > 500:
-                all_values = log_ws.get_all_values()
-                if len(all_values) > 500:
-                    log_ws.delete_rows(2)
-            print("Log berjaya ditulis ke GITHUB_LOGS")
-        else:
-            print("RALAT: Tab GITHUB_LOGS tidak dijumpai dalam senarai!")
+            rows = log_ws.get_all_values()
+            if len(rows) > 500:
+                log_ws.delete_rows(2, len(rows) - 499)
     except Exception as e:
         print(f"Gagal tulis log: {str(e)}")
 
@@ -77,13 +73,15 @@ try:
     updates = 0
     for user, is_live in results:
         was_live = status_tracker.get(user, False)
-        now_t, today = datetime.now().strftime("%H:%M:%S"), datetime.now().strftime("%d/%m/%Y")
+        now_t = datetime.now().strftime("%H:%M:%S")
+        today = datetime.now().strftime("%d/%m/%Y")
         
         if is_live and not was_live:
             ws.append_row([user, "LIVE", now_t, "", "", today])
             send_telegram(f"🔴 <b>LIVE:</b> @{user}")
             status_tracker[user], updates = True, updates + 1
         elif not is_live and was_live:
+            # Cari entri terakhir untuk user ini secara efisien
             cells = ws.findall(user)
             if cells:
                 r = cells[-1].row
@@ -92,12 +90,17 @@ try:
             send_telegram(f"⚪ <b>OFFLINE:</b> @{user}")
             status_tracker[user], updates = False, updates + 1
 
-    json.dump(status_tracker, open("status.json", "w"))
+    # Simpan status terbaru
+    with open("status.json", "w") as f:
+        json.dump(status_tracker, f)
+        
     duration = round(time.time() - start_time, 2)
     write_github_log(sh, "SUCCESS", f"Duration: {duration}s | Updates: {updates}")
-    print("Selesai.")
+    print(f"Selesai dalam {duration}s.")
 
 except Exception as e:
     print(f"Error: {str(e)}")
-    try: write_github_log(gc.open(SHEET_NAME), "ERROR", str(e))
+    try:
+        sh_err = gc.open(SHEET_NAME)
+        write_github_log(sh_err, "ERROR", str(e))
     except: pass
