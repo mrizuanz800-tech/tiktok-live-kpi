@@ -5,6 +5,8 @@ on:
     # GitHub mungkin delay 10-30 minit, tapi kita tetap set 10 minit
     - cron: '*/10 * * * *'
   workflow_dispatch:
+  repository_dispatch:
+    types: [check_live]
 
 jobs:
   run-monitor:
@@ -33,13 +35,14 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          
-          # Paksa perubahan fail supaya GitHub nampak repo ni aktif
           date > last_run.txt
-          
+          git add status.json last_run.txt
+          git commit -m "Bot Run: $(date) [skip ci]" || echo "No changes"
+          git pull origin main --rebase
+          git push origin main
+                    
           git add status.json last_run.txt
           
-          # Hanya commit jika ada perubahan (status live berubah ATAU last_run berubah)
           if git diff --staged --quiet; then
             echo "Tiada perubahan untuk di-commit."
           else
