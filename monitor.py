@@ -21,41 +21,43 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def check_tiktok_live(session, username):
+    # Kita guna User-Agent mobile supaya TikTok bagi paparan yang lebih 'direct'
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.google.com/",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
     }
     url = f"https://www.tiktok.com/@{username}/live"
     try:
         r = session.get(url, headers=headers, timeout=15)
         
+        # Kalau kena block atau suruh login, kita skip
         if r.status_code != 200 or "login" in r.url: 
             return username, False
         
-        html_content = r.text
+        html = r.text
         
-        # --- PENAPISAN KETAT (ANTI-FALSE POSITIVE) ---
+        # --- LOGIK BARU: CARI TANDA HIDUP ---
         
-        # 1. Check kalau ada tanda Live dah habis (Sangat Penting!)
-        # Kalau ada perkataan ni, maksudnya dia dah OFFLINE
-        if 'LIVE has ended' in html_content or 'LIVE ended' in html_content:
-            return username, False
+        # 1. Tanda utama: roomId mesti ada dan bukan 0
+        # Format TikTok biasanya: "roomId":"73645251..."
+        has_room_id = '"roomId":"' in html and '"roomId":"0"' not in html
+        
+        # 2. Tanda kedua: Cari keyword 'broadcast' atau 'isPlayerLive'
+        is_live_status = '"isPlayerLive":true' in html or '"status":2' in html
+        
+        # 3. Double check: Pastikan bukan 'LIVE has ended'
+        not_ended = 'LIVE has ended' not in html and 'LIVE ended' not in html
 
-        # 2. Check pengesahan Live yang aktif
-        # Mesti ada 'isPlayerLive':true DAN roomId bukan '0'
-        is_player_live = '"isPlayerLive":true' in html_content
-        is_room_active = '"roomId":' in html_content and '"roomId":"0"' not in html_content
-        
-        # 3. Check text yang hanya muncul masa video tengah jalan
-        # Biasanya ada 'watch live video' dalam description atau meta
-        is_streaming = 'watch live video' in html_content.lower()
+        # KEPUTUSAN: Kalau ada room_id DAN tak tulis 'ended', kita sahkan LIVE
+        if has_room_id and not_ended:
+            return username, True
+            
+        # Backup plan: Kalau room_id tak jumpa tapi isPlayerLive ada
+        if is_live_status and not_ended:
+            return username, True
 
-        # SYARAT KERAS: Mesti (is_player_live ATAU is_room_active) DAN is_streaming
-        # Ini akan tapis rakaman/playback/bekas cache
-        is_live = (is_player_live or is_room_active) and is_streaming
-        
-        return username, is_live
+        return username, False
     except: 
         return username, False
 
