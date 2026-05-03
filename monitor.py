@@ -22,37 +22,46 @@ def get_gspread_client():
 
 import re # Pastikan ada import re kat paling atas sekali (luar function)
 
+import re
+
 def check_tiktok_live(session, username):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.google.com/",
     }
-    url = f"https://www.tiktok.com/@{username}/live"
+    
+    # Kita guna URL profil biasa sebab kadang-kadang /live lagi ketat sekatannya
+    url = f"https://www.tiktok.com/@{username}"
+    
     try:
         r = session.get(url, headers=headers, timeout=15)
-        if r.status_code != 200: return username, False
-        
+        if r.status_code != 200:
+            return username, False
+            
         html = r.text
         
-        # --- LOGIK PUKAT HARIMAU ---
-        # Kita cari status guna regex supaya tak terlepas kalau ada space pelik
-        # Mencari "status":2 atau "status": 2
-        is_live_json = re.search(r'"status"\s*:\s*2', html)
+        # --- TEKNIK STREAM HUNTER ---
         
-        # Mencari roomId yang bukan kosong
-        # Mencari "roomId":"12345..."
-        room_match = re.search(r'"roomId"\s*:\s*"(\d+)"', html)
-        has_room = room_match and room_match.group(1) != "0"
+        # 1. Cari roomId (Mesti ada dan bukan 0)
+        # Kita guna regex yang lebih 'longgar' tapi tepat
+        room_id = re.search(r'"roomId"\s*:\s*"(\d+)"', html)
+        is_live_room = room_id and room_id.group(1) != "0"
         
-        # Double check kalau ada perkataan broadcast
-        is_broadcast = "broadcasterId" in html or "room_id" in html
+        # 2. Cari link stream .m3u8 atau .flv
+        # Ini hanya muncul dalam kod kalau player tengah aktif
+        has_stream_link = ".m3u8" in html or ".flv" in html or "pull-hls-f1" in html
+        
+        # 3. Cari status 2 (On Air)
+        is_on_air = '"status":2' in html or '"status": 2' in html
 
-        # SYARAT: Mesti ada status 2 DAN roomId bukan 0
-        if is_live_json and has_room and is_broadcast:
+        # KEPUTUSAN: 
+        # Kalau ada RoomID DAN (Status 2 ATAU Stream Link)
+        if is_live_room and (is_on_air or has_stream_link):
+            # Pastikan bukan iklan atau ended
             if "LIVE has ended" not in html:
                 return username, True
-        
+
         return username, False
     except:
         return username, False
