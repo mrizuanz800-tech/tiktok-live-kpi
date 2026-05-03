@@ -23,43 +23,43 @@ def get_gspread_client():
 import re # Pastikan ada import re kat paling atas sekali (luar function)
 
 import re
+import time
 
 def check_tiktok_live(session, username):
+    # API Pintu Belakang - TikTok guna ni untuk check status bilik live
+    # Kita guna timestamp untuk elakkan cache
+    ts = int(time.time())
+    url = f"https://www.tiktok.com/api/live/detail/?live_id={username}&_={ts}"
+    
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Referer": "https://www.google.com/",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
+        "Referer": f"https://www.tiktok.com/@{username}/live",
+        "Accept": "application/json",
     }
     
-    # Kita guna URL profil biasa sebab kadang-kadang /live lagi ketat sekatannya
-    url = f"https://www.tiktok.com/@{username}"
-    
     try:
-        r = session.get(url, headers=headers, timeout=15)
+        r = session.get(url, headers=headers, timeout=10)
+        
+        # Kalau TikTok block API, kita buat 'Last Resort' check
         if r.status_code != 200:
             return username, False
             
-        html = r.text
+        data = r.json()
         
-        # --- TEKNIK STREAM HUNTER ---
+        # Logik API TikTok:
+        # data['data']['liveRoom']['status'] -> 2 bermaksud LIVE
+        live_room = data.get("data", {}).get("liveRoom", {})
+        status = live_room.get("status")
         
-        # 1. Cari roomId (Mesti ada dan bukan 0)
-        # Kita guna regex yang lebih 'longgar' tapi tepat
-        room_id = re.search(r'"roomId"\s*:\s*"(\d+)"', html)
-        is_live_room = room_id and room_id.group(1) != "0"
-        
-        # 2. Cari link stream .m3u8 atau .flv
-        # Ini hanya muncul dalam kod kalau player tengah aktif
-        has_stream_link = ".m3u8" in html or ".flv" in html or "pull-hls-f1" in html
-        
-        # 3. Cari status 2 (On Air)
-        is_on_air = '"status":2' in html or '"status": 2' in html
-
-        # KEPUTUSAN: 
-        # Kalau ada RoomID DAN (Status 2 ATAU Stream Link)
-        if is_live_room and (is_on_air or has_stream_link):
-            # Pastikan bukan iklan atau ended
-            if "LIVE has ended" not in html:
+        if status == 2:
+            return username, True
+            
+        # Jika API tak bagi status, kita check ROOM ID dalam profil (Cara Alternatif)
+        if not status:
+            web_url = f"https://www.tiktok.com/@{username}"
+            web_r = session.get(web_url, headers=headers, timeout=10)
+            # Cari corak "room_id=123456789" dalam kod
+            if re.search(r'room_id=\d+', web_r.text) and "is LIVE" in web_r.text:
                 return username, True
 
         return username, False
