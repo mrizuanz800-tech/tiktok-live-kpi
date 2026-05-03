@@ -26,42 +26,37 @@ import re
 import time
 
 def check_tiktok_live(session, username):
-    # API Pintu Belakang - TikTok guna ni untuk check status bilik live
-    # Kita guna timestamp untuk elakkan cache
-    ts = int(time.time())
-    url = f"https://www.tiktok.com/api/live/detail/?live_id={username}&_={ts}"
+    # Teknik Oembed: Cara paling 'sopan' tanya TikTok status profil
+    # Cara ni jarang kena block sebab TikTok guna ni untuk preview link
+    url = f"https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{username}/live"
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
-        "Referer": f"https://www.tiktok.com/@{username}/live",
-        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     }
     
     try:
         r = session.get(url, headers=headers, timeout=10)
         
-        # Kalau TikTok block API, kita buat 'Last Resort' check
-        if r.status_code != 200:
-            return username, False
+        # Kalau akaun tu TENGAH LIVE:
+        # Oembed akan bagi tajuk "Username is LIVE on TikTok"
+        if r.status_code == 200:
+            data = r.json()
+            title = data.get("title", "")
             
-        data = r.json()
-        
-        # Logik API TikTok:
-        # data['data']['liveRoom']['status'] -> 2 bermaksud LIVE
-        live_room = data.get("data", {}).get("liveRoom", {})
-        status = live_room.get("status")
-        
-        if status == 2:
-            return username, True
-            
-        # Jika API tak bagi status, kita check ROOM ID dalam profil (Cara Alternatif)
-        if not status:
-            web_url = f"https://www.tiktok.com/@{username}"
-            web_r = session.get(web_url, headers=headers, timeout=10)
-            # Cari corak "room_id=123456789" dalam kod
-            if re.search(r'room_id=\d+', web_r.text) and "is LIVE" in web_r.text:
+            if "is LIVE" in title or "tengah LIVE" in title:
+                # Double check untuk elakkan false positive
+                # Kalau tengah live, thumbnail dia selalunya berbeza
                 return username, True
-
+        
+        # --- CARA ALTERNATIF (BACKUP) ---
+        # Kalau Oembed tak bagi jawapan tepat, kita buat 'Screen Scraping' paling ringkas
+        web_url = f"https://www.tiktok.com/@{username}/live"
+        r_web = session.get(web_url, headers=headers, timeout=10)
+        
+        # Kita cari ID unik yang hanya ada masa player video aktif
+        if 'room_id=' in r_web.text and '"status":2' in r_web.text:
+             return username, True
+             
         return username, False
     except:
         return username, False
