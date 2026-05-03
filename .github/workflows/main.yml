@@ -2,6 +2,7 @@ name: TikTok Live KPI Monitor
 
 on:
   schedule:
+    # GitHub mungkin delay 10-30 minit, tapi kita tetap set 10 minit
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
@@ -10,15 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4 # Update ke v4
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v5 # Update ke v5
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install Libraries
-        run: pip install -r requirements.txt
+        run: |
+          pip install requests gspread google-auth
 
       - name: Run Python Script
         env:
@@ -27,19 +29,21 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor.py
 
-      - name: Save Status
+      - name: Save Status & Keep-Alive
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
-          # Pastikan kita di branch main dan selari dengan origin
-          git pull origin main --rebase
+          # Paksa perubahan fail supaya GitHub nampak repo ni aktif
+          date > last_run.txt
           
-          # Hanya commit kalau ada perubahan pada status.json
-          git add status.json
+          git add status.json last_run.txt
+          
+          # Hanya commit jika ada perubahan (status live berubah ATAU last_run berubah)
           if git diff --staged --quiet; then
-            echo "Tiada perubahan pada status.json"
+            echo "Tiada perubahan untuk di-commit."
           else
-            git commit -m "Update live status [skip ci]"
+            git commit -m "Bot Update: $(date +'%Y-%m-%d %H:%M:%S') [skip ci]"
+            git pull origin main --rebase
             git push origin main
           fi
