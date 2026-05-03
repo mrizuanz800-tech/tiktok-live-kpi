@@ -1,52 +1,27 @@
-name: TikTok Live KPI Monitor
-
 on:
-  schedule:
-    # GitHub mungkin delay 10-30 minit, tapi kita tetap set 10 minit
-    - cron: '*/10 * * * *'
-  workflow_dispatch:
   repository_dispatch:
     types: [check_live]
 
 jobs:
-  run-monitor:
+  monitor:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-
-      - name: Install Libraries
-        run: |
-          pip install requests gspread google-auth
-
-      - name: Run Python Script
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install requests
+      - name: Run Monitor
         env:
-          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python monitor.py
-
-      - name: Save Status & Keep-Alive
+        run: python monitor.py '${{ nickname(github.event.client_payload) }}'
+      - name: Commit changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          
-          # Kemaskini fail last_run untuk pastikan ada aktiviti
-          date > last_run.txt
-          
-          # Add kedua-dua fail
-          git add status.json last_run.txt
-          
-          # Hanya commit & push jika ada perubahan (elak ralat empty commit)
-          if ! git diff --staged --quiet; then
-            git commit -m "Bot Run: $(date +'%Y-%m-%d %H:%M:%S') [skip ci]"
-            git pull origin main --rebase
-            git push origin main
-          else
-            echo "Tiada perubahan dikesan."
-          fi
+          git add status.json
+          git commit -m "Update status for ${{ github.event.client_payload.username }} [skip ci]" || exit 0
+          git push
