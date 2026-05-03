@@ -4,10 +4,8 @@ import gspread
 import requests
 import time
 import random
-# Tambah timedelta di sini
 from datetime import datetime, timedelta 
 from google.oauth2.service_account import Credentials
-from concurrent.futures import ThreadPoolExecutor
 
 # --- CONFIG ---
 TARGET_USERS = ["kekanda__", "c.hzrina", "ct.aisyahh", "asslahierah", "keanu.riev", "capikjohari", "nurulaiinaa.a", "urpiqachu", "bukanmiraaaaaa", "memangmiraaa", "s5yer_", "harszanlagi", "najlazulaikha_", "nuarjelaaa", "ehin__", "mdsyhmie", "amriezaidi", "malkodok97", "sofiyahhhs", "azrulharry", "irfndanialb", "lokman6005", "mad_khann", "dausbatjo", "aimnjunaid._", "faeqahkahar", "unalou._"]
@@ -23,10 +21,10 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def check_tiktok_live(session, username):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     url = f"https://www.tiktok.com/@{username}/live"
     try:
-        r = session.get(url, headers=headers, timeout=10)
+        r = session.get(url, headers=headers, timeout=15)
         if r.status_code != 200 or "login" in r.url: return username, False
         is_live = '"isPlayerLive":true' in r.text and 'watch live video' in r.text.lower()
         return username, is_live
@@ -45,11 +43,9 @@ def write_github_log(sh, status, remark=""):
         ws_list = [w.title for w in sh.worksheets()]
         if "GITHUB_LOGS" in ws_list:
             log_ws = sh.worksheet("GITHUB_LOGS")
-            # Laraskan ke waktu Malaysia (UTC+8)
             now = (datetime.utcnow() + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
             log_ws.append_row([now, status, remark])
             
-            # Auto cleanup > 500 rows
             rows = log_ws.get_all_values()
             if len(rows) > 500:
                 log_ws.delete_rows(2, len(rows) - 499)
@@ -57,23 +53,37 @@ def write_github_log(sh, status, remark=""):
         print(f"Gagal tulis log: {str(e)}")
 
 # --- MAIN RUN ---
-print(f"Menyambung ke Google Sheet...")
+print(f"Memulakan Strategi Halimun...")
 start_time = time.time()
+
 try:
+    # 1. RANDOM START DELAY (1 - 60 saat)
+    delay_awal = random.randint(1, 60)
+    print(f"Menunggu secara rawak selama {delay_awal}s sebelum bermula...")
+    time.sleep(delay_awal)
+
     gc = get_gspread_client()
     sh = gc.open(SHEET_NAME)
     ws = sh.worksheet("LIVE_TRACKER")
     
+    # 2. SHUFFLE TARGET USERS
     random.shuffle(TARGET_USERS)
     status_tracker = json.load(open("status.json", "r")) if os.path.exists("status.json") else {}
 
-    print(f"Checking {len(TARGET_USERS)} users...")
+    print(f"Menyemak {len(TARGET_USERS)} pengguna...")
+    
+    results = []
     with requests.Session() as session:
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            results = list(executor.map(lambda u: check_tiktok_live(session, u), TARGET_USERS))
+        for user in TARGET_USERS:
+            print(f"Menyemak: {user}")
+            res = check_tiktok_live(session, user)
+            results.append(res)
+            
+            # 3. DELAY RAWAK ANTARA USER (1.0 - 3.5 saat)
+            # Meniru kelajuan skrol manusia
+            time.sleep(random.uniform(1.0, 3.5))
 
     updates = 0
-    # Dapatkan waktu Malaysia untuk kegunaan dalam loop
     now_malaysia = datetime.utcnow() + timedelta(hours=8)
     now_t = now_malaysia.strftime("%H:%M:%S")
     today = now_malaysia.strftime("%d/%m/%Y")
@@ -86,7 +96,6 @@ try:
             send_telegram(f"🔴 <b>LIVE:</b> @{user}")
             status_tracker[user], updates = True, updates + 1
         elif not is_live and was_live:
-            # Cari entri terakhir untuk user ini secara efisien
             cells = ws.findall(user)
             if cells:
                 r = cells[-1].row
@@ -95,7 +104,6 @@ try:
             send_telegram(f"⚪ <b>OFFLINE:</b> @{user}")
             status_tracker[user], updates = False, updates + 1
 
-    # Simpan status terbaru
     with open("status.json", "w") as f:
         json.dump(status_tracker, f)
         
