@@ -21,50 +21,47 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def check_tiktok_live(session, username):
-    # API URL ni adalah cara 'pintu belakang' untuk check status tanpa load satu page besar
-    url = f"https://www.tiktok.com/api/live/detail/?verifyFp=&type_id=1&live_id={username}&sec_user_id=&app_id=1233&msToken="
-    
+    # Gunakan User-Agent yang sangat biasa (Chrome Windows)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Referer": f"https://www.tiktok.com/@{username}/live",
-        "Accept": "application/json",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
     }
+    
+    # Kita tukar URL. Kadang-kadang /live kena block, tapi profil biasa tidak.
+    url = f"https://www.tiktok.com/@{username}"
     
     try:
         r = session.get(url, headers=headers, timeout=15)
-        
-        # Jika TikTok minta captcha atau block, return False
         if r.status_code != 200:
             return username, False
             
-        data = r.json()
+        html = r.text
         
-        # Logik API TikTok:
-        # data['data']['liveRoom']['status']
-        # 2 = LIVE, 4 = ENDED
-        live_info = data.get("data", {}).get("liveRoom", {})
-        status = live_info.get("status")
+        # --- PENAPISAN SEO HUNTER ---
         
-        if status == 2:
-            print(f"DEBUG: {username} IS LIVE (API CONFIRMED)")
-            return username, True
+        # 1. Check Title Page: TikTok akan tulis "Username is LIVE | TikTok"
+        # Ini tanda paling kukuh yang tak boleh ditipu
+        is_title_live = f"@{username} is LIVE" in html or "is LIVE | TikTok" in html
         
-        # Backup: Kalau API tak bagi status, kita check roomId dalam JSON tu
-        room_id = live_info.get("roomId")
-        if room_id and room_id != "0" and status != 4:
+        # 2. Check Meta Description
+        # TikTok letak description khusus kalau tengah Live
+        is_meta_live = "watch live video" in html.lower() or "tonton video live" in html.lower()
+        
+        # 3. Check JSON Nadi (Bukan API, tapi script dalam HTML)
+        # Cari "roomId" yang bukan kosong dalam balutan script
+        has_room = '"roomId":"' in html and '"roomId":"0"' not in html
+
+        # KEPUTUSAN: 
+        # Kalau Title kata LIVE (atau) Meta kata Live + ada RoomID
+        if is_title_live or (is_meta_live and has_room):
+            print(f"DEBUG: {username} DETECTED LIVE via SEO Hunter!")
             return username, True
 
         return username, False
     except:
-        # Kalau API JSON gagal, kita guna cara 'Title Check' (paling last resort)
-        try:
-            url_web = f"https://www.tiktok.com/@{username}/live"
-            r_web = session.get(url_web, headers=headers, timeout=10)
-            # Kadang-kadang TikTok letak tajuk 'is LIVE | TikTok'
-            if "is LIVE" in r_web.text:
-                return username, True
-        except:
-            pass
         return username, False
 
 def send_telegram(message):
