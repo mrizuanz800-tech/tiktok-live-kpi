@@ -21,17 +21,13 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def check_tiktok_live(session, username):
-    # Gunakan User-Agent yang sangat biasa (Chrome Windows)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
     }
     
-    # Kita tukar URL. Kadang-kadang /live kena block, tapi profil biasa tidak.
-    url = f"https://www.tiktok.com/@{username}"
+    # Kita balik ke URL /live karena di sini data statusnya lebih jujur
+    url = f"https://www.tiktok.com/@{username}/live"
     
     try:
         r = session.get(url, headers=headers, timeout=15)
@@ -40,30 +36,30 @@ def check_tiktok_live(session, username):
             
         html = r.text
         
-        # --- PENAPISAN SEO HUNTER ---
+        # --- PENAPISAN STATUS ASLI ---
         
-        # 1. Check Title Page: TikTok akan tulis "Username is LIVE | TikTok"
-        # Ini tanda paling kukuh yang tak boleh ditipu
-        is_title_live = f"@{username} is LIVE" in html or "is LIVE | TikTok" in html
+        # 1. Cari status spesifik dalam JSON TikTok
+        # "status":2 artinya LIVE SEKARANG
+        # "status":4 artinya LIVE SUDAH BERAKHIR
+        is_live_status = '"status":2' in html
         
-        # 2. Check Meta Description
-        # TikTok letak description khusus kalau tengah Live
-        is_meta_live = "watch live video" in html.lower() or "tonton video live" in html.lower()
+        # 2. Cari roomId yang valid (bukan "0")
+        has_valid_room = '"roomId":"' in html and '"roomId":"0"' not in html
         
-        # 3. Check JSON Nadi (Bukan API, tapi script dalam HTML)
-        # Cari "roomId" yang bukan kosong dalam balutan script
-        has_room = '"roomId":"' in html and '"roomId":"0"' not in html
+        # 3. Validasi tambahan: Harus ada kata 'broadcast' di dalam data JSON-nya
+        # Ini untuk membedakan dengan halaman profil biasa
+        is_broadcast = '"broadcasterId"' in html
 
-        # KEPUTUSAN: 
-        # Kalau Title kata LIVE (atau) Meta kata Live + ada RoomID
-        if is_title_live or (is_meta_live and has_room):
-            print(f"DEBUG: {username} DETECTED LIVE via SEO Hunter!")
-            return username, True
+        # KEPUTUSAN MUTLAK:
+        # Hanya katakan LIVE jika statusnya 2 DAN ada roomId-nya
+        if is_live_status and has_valid_room and is_broadcast:
+            # Terakhir, pastikan tidak ada tulisan "LIVE has ended"
+            if "LIVE has ended" not in html:
+                return username, True
 
         return username, False
     except:
         return username, False
-
 def send_telegram(message):
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
