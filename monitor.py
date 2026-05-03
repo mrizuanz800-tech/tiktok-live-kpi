@@ -20,46 +20,43 @@ def get_gspread_client():
     )
     return gspread.authorize(creds)
 
+import re # Pastikan ada import re kat paling atas sekali (luar function)
+
 def check_tiktok_live(session, username):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
     }
-    
-    # Kita balik ke URL /live karena di sini data statusnya lebih jujur
     url = f"https://www.tiktok.com/@{username}/live"
-    
     try:
         r = session.get(url, headers=headers, timeout=15)
-        if r.status_code != 200:
-            return username, False
-            
+        if r.status_code != 200: return username, False
+        
         html = r.text
         
-        # --- PENAPISAN STATUS ASLI ---
+        # --- LOGIK PUKAT HARIMAU ---
+        # Kita cari status guna regex supaya tak terlepas kalau ada space pelik
+        # Mencari "status":2 atau "status": 2
+        is_live_json = re.search(r'"status"\s*:\s*2', html)
         
-        # 1. Cari status spesifik dalam JSON TikTok
-        # "status":2 artinya LIVE SEKARANG
-        # "status":4 artinya LIVE SUDAH BERAKHIR
-        is_live_status = '"status":2' in html
+        # Mencari roomId yang bukan kosong
+        # Mencari "roomId":"12345..."
+        room_match = re.search(r'"roomId"\s*:\s*"(\d+)"', html)
+        has_room = room_match and room_match.group(1) != "0"
         
-        # 2. Cari roomId yang valid (bukan "0")
-        has_valid_room = '"roomId":"' in html and '"roomId":"0"' not in html
-        
-        # 3. Validasi tambahan: Harus ada kata 'broadcast' di dalam data JSON-nya
-        # Ini untuk membedakan dengan halaman profil biasa
-        is_broadcast = '"broadcasterId"' in html
+        # Double check kalau ada perkataan broadcast
+        is_broadcast = "broadcasterId" in html or "room_id" in html
 
-        # KEPUTUSAN MUTLAK:
-        # Hanya katakan LIVE jika statusnya 2 DAN ada roomId-nya
-        if is_live_status and has_valid_room and is_broadcast:
-            # Terakhir, pastikan tidak ada tulisan "LIVE has ended"
+        # SYARAT: Mesti ada status 2 DAN roomId bukan 0
+        if is_live_json and has_room and is_broadcast:
             if "LIVE has ended" not in html:
                 return username, True
-
+        
         return username, False
     except:
         return username, False
+        
 def send_telegram(message):
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
