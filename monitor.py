@@ -21,29 +21,39 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def check_tiktok_live(session, username):
-    # Kita guna User-Agent yang lebih baru dan realistik
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.google.com/",
     }
     url = f"https://www.tiktok.com/@{username}/live"
     try:
-        # Tambah timeout sikit lagi lama (15s) supaya page sempat load
         r = session.get(url, headers=headers, timeout=15)
         
         if r.status_code != 200 or "login" in r.url: 
             return username, False
         
-        # --- STRATEGI PENGESAHAN BERLAPIS ---
-        # 1. Check keyword utama
-        is_player_live = '"isPlayerLive":true' in r.text
-        # 2. Check tajuk page (TikTok selalunya letak 'is LIVE' kat title)
-        is_title_live = 'is LIVE' in r.text
-        # 3. Check keyword tambahan dalam JSON data
-        is_room_id = '"roomId":' in r.text and '"roomId":"0"' not in r.text
+        html_content = r.text
+        
+        # --- PENAPISAN KETAT (ANTI-FALSE POSITIVE) ---
+        
+        # 1. Check kalau ada tanda Live dah habis (Sangat Penting!)
+        # Kalau ada perkataan ni, maksudnya dia dah OFFLINE
+        if 'LIVE has ended' in html_content or 'LIVE ended' in html_content:
+            return username, False
 
-        # Jika salah satu petanda ni ada, kita anggap dia LIVE
-        is_live = is_player_live or is_title_live or is_room_id
+        # 2. Check pengesahan Live yang aktif
+        # Mesti ada 'isPlayerLive':true DAN roomId bukan '0'
+        is_player_live = '"isPlayerLive":true' in html_content
+        is_room_active = '"roomId":' in html_content and '"roomId":"0"' not in html_content
+        
+        # 3. Check text yang hanya muncul masa video tengah jalan
+        # Biasanya ada 'watch live video' dalam description atau meta
+        is_streaming = 'watch live video' in html_content.lower()
+
+        # SYARAT KERAS: Mesti (is_player_live ATAU is_room_active) DAN is_streaming
+        # Ini akan tapis rakaman/playback/bekas cache
+        is_live = (is_player_live or is_room_active) and is_streaming
         
         return username, is_live
     except: 
