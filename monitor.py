@@ -34,8 +34,14 @@ def send_telegram(message):
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     try:
+        # Tambah disable_web_page_preview=False kalau nak biar ada gambar preview TikTok
         requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
-                      json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"})
+                      json={
+                          "chat_id": chat_id, 
+                          "text": message, 
+                          "parse_mode": "HTML",
+                          "disable_web_page_preview": False
+                      })
     except: pass
 
 def write_github_log(sh, status, remark=""):
@@ -92,18 +98,42 @@ try:
         was_live = status_tracker.get(user, False)
         
         if is_live and not was_live:
+            # 1. Update Sheet
             ws.append_row([user, "LIVE", now_t, "", "", today])
-            send_telegram(f"🔴 <b>LIVE:</b> @{user}")
+            
+            # 2. Hantar Telegram dengan Hyperlink Padu
+            link_live = f"https://www.tiktok.com/@{user}/live"
+            mesej_live = (
+                f"🔴 <b>LIVE SEKARANG!</b>\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"👤 <b>@{user}</b> tengah rancak di TikTok!\n\n"
+                f"🔗 <a href='{link_live}'>KLIK SINI UNTUK TONTON</a>"
+            )
+            send_telegram(mesej_live)
+            
             status_tracker[user], updates = True, updates + 1
+            
         elif not is_live and was_live:
+            # 1. Cari entri terakhir & Update Sheet jadi OFFLINE
             cells = ws.findall(user)
             if cells:
                 r = cells[-1].row
                 ws.update_cell(r, 2, "OFFLINE")
                 ws.update_cell(r, 4, now_t)
-            send_telegram(f"⚪ <b>OFFLINE:</b> @{user}")
+            
+            # 2. Hantar Noti Offline dengan Link Profil (Just in case nak check)
+            link_profile = f"https://www.tiktok.com/@{user}"
+            mesej_offline = (
+                f"⚪ <b>SUDAH OFFLINE</b>\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"👤 <b>@{user}</b> telah tamat sesi LIVE.\n\n"
+                f"🔗 <a href='{link_profile}'>LIHAT PROFIL</a>"
+            )
+            send_telegram(mesej_offline)
+            
             status_tracker[user], updates = False, updates + 1
 
+    # --- SIMPAN STATUS & LOG ---
     with open("status.json", "w") as f:
         json.dump(status_tracker, f)
         
