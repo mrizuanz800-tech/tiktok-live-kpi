@@ -21,14 +21,33 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def check_tiktok_live(session, username):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    # Kita guna User-Agent yang lebih baru dan realistik
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
     url = f"https://www.tiktok.com/@{username}/live"
     try:
+        # Tambah timeout sikit lagi lama (15s) supaya page sempat load
         r = session.get(url, headers=headers, timeout=15)
-        if r.status_code != 200 or "login" in r.url: return username, False
-        is_live = '"isPlayerLive":true' in r.text and 'watch live video' in r.text.lower()
+        
+        if r.status_code != 200 or "login" in r.url: 
+            return username, False
+        
+        # --- STRATEGI PENGESAHAN BERLAPIS ---
+        # 1. Check keyword utama
+        is_player_live = '"isPlayerLive":true' in r.text
+        # 2. Check tajuk page (TikTok selalunya letak 'is LIVE' kat title)
+        is_title_live = 'is LIVE' in r.text
+        # 3. Check keyword tambahan dalam JSON data
+        is_room_id = '"roomId":' in r.text and '"roomId":"0"' not in r.text
+
+        # Jika salah satu petanda ni ada, kita anggap dia LIVE
+        is_live = is_player_live or is_title_live or is_room_id
+        
         return username, is_live
-    except: return username, False
+    except: 
+        return username, False
 
 def send_telegram(message):
     token = os.getenv("TELEGRAM_TOKEN")
