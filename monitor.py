@@ -4,7 +4,8 @@ import gspread
 import requests
 import time
 import random
-from datetime import datetime
+# Tambah timedelta di sini
+from datetime import datetime, timedelta 
 from google.oauth2.service_account import Credentials
 from concurrent.futures import ThreadPoolExecutor
 
@@ -44,7 +45,8 @@ def write_github_log(sh, status, remark=""):
         ws_list = [w.title for w in sh.worksheets()]
         if "GITHUB_LOGS" in ws_list:
             log_ws = sh.worksheet("GITHUB_LOGS")
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Laraskan ke waktu Malaysia (UTC+8)
+            now = (datetime.utcnow() + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
             log_ws.append_row([now, status, remark])
             
             # Auto cleanup > 500 rows
@@ -71,10 +73,13 @@ try:
             results = list(executor.map(lambda u: check_tiktok_live(session, u), TARGET_USERS))
 
     updates = 0
+    # Dapatkan waktu Malaysia untuk kegunaan dalam loop
+    now_malaysia = datetime.utcnow() + timedelta(hours=8)
+    now_t = now_malaysia.strftime("%H:%M:%S")
+    today = now_malaysia.strftime("%d/%m/%Y")
+
     for user, is_live in results:
         was_live = status_tracker.get(user, False)
-        now_t = datetime.now().strftime("%H:%M:%S")
-        today = datetime.now().strftime("%d/%m/%Y")
         
         if is_live and not was_live:
             ws.append_row([user, "LIVE", now_t, "", "", today])
