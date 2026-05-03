@@ -21,44 +21,50 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def check_tiktok_live(session, username):
-    # Kita guna User-Agent mobile supaya TikTok bagi paparan yang lebih 'direct'
+    # API URL ni adalah cara 'pintu belakang' untuk check status tanpa load satu page besar
+    url = f"https://www.tiktok.com/api/live/detail/?verifyFp=&type_id=1&live_id={username}&sec_user_id=&app_id=1233&msToken="
+    
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": f"https://www.tiktok.com/@{username}/live",
+        "Accept": "application/json",
     }
-    url = f"https://www.tiktok.com/@{username}/live"
+    
     try:
         r = session.get(url, headers=headers, timeout=15)
         
-        # Kalau kena block atau suruh login, kita skip
-        if r.status_code != 200 or "login" in r.url: 
+        # Jika TikTok minta captcha atau block, return False
+        if r.status_code != 200:
             return username, False
-        
-        html = r.text
-        
-        # --- LOGIK BARU: CARI TANDA HIDUP ---
-        
-        # 1. Tanda utama: roomId mesti ada dan bukan 0
-        # Format TikTok biasanya: "roomId":"73645251..."
-        has_room_id = '"roomId":"' in html and '"roomId":"0"' not in html
-        
-        # 2. Tanda kedua: Cari keyword 'broadcast' atau 'isPlayerLive'
-        is_live_status = '"isPlayerLive":true' in html or '"status":2' in html
-        
-        # 3. Double check: Pastikan bukan 'LIVE has ended'
-        not_ended = 'LIVE has ended' not in html and 'LIVE ended' not in html
-
-        # KEPUTUSAN: Kalau ada room_id DAN tak tulis 'ended', kita sahkan LIVE
-        if has_room_id and not_ended:
-            return username, True
             
-        # Backup plan: Kalau room_id tak jumpa tapi isPlayerLive ada
-        if is_live_status and not_ended:
+        data = r.json()
+        
+        # Logik API TikTok:
+        # data['data']['liveRoom']['status']
+        # 2 = LIVE, 4 = ENDED
+        live_info = data.get("data", {}).get("liveRoom", {})
+        status = live_info.get("status")
+        
+        if status == 2:
+            print(f"DEBUG: {username} IS LIVE (API CONFIRMED)")
+            return username, True
+        
+        # Backup: Kalau API tak bagi status, kita check roomId dalam JSON tu
+        room_id = live_info.get("roomId")
+        if room_id and room_id != "0" and status != 4:
             return username, True
 
         return username, False
-    except: 
+    except:
+        # Kalau API JSON gagal, kita guna cara 'Title Check' (paling last resort)
+        try:
+            url_web = f"https://www.tiktok.com/@{username}/live"
+            r_web = session.get(url_web, headers=headers, timeout=10)
+            # Kadang-kadang TikTok letak tajuk 'is LIVE | TikTok'
+            if "is LIVE" in r_web.text:
+                return username, True
+        except:
+            pass
         return username, False
 
 def send_telegram(message):
